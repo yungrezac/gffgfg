@@ -17,15 +17,14 @@
         body {
             margin: 0;
             padding: 0;
-            background-color: transparent; /* Оставляем прозрачным для OBS */
+            background-color: transparent;
             overflow: hidden;
             font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             color: white;
         }
 
-        /* Демо-фон (уберите или закомментируйте для чистого хромакея в OBS) */
         .demo-background {
-            background: linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(0,0,0,0.98) 100%);
+            background: linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(0,0,0,1) 100%);
         }
 
         .progress-bar-transition { transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -39,24 +38,31 @@
 
         @keyframes winnerPop {
             0% { opacity: 0; transform: scale(0.5); }
-            50% { opacity: 1; transform: scale(1.1); }
+            50% { opacity: 1.1; transform: scale(1.1); }
             100% { opacity: 1; transform: scale(1); }
         }
         .winner-anim { animation: winnerPop 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        
+        /* Анимация жесткого выбывания */
+        @keyframes explode-out {
+            0% { transform: scale(1); opacity: 1; filter: brightness(1); }
+            20% { transform: scale(1.1); filter: brightness(2) contrast(2); border-color: red; }
+            100% { transform: scale(0.8) translateY(20px); opacity: 0; filter: blur(5px); }
+        }
+        .eliminating-anim { animation: explode-out 1.5s ease-in-out forwards; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
 
         // --- ДАННЫЕ SUPABASE ---
         const SUPABASE_URL = 'https://zagvyrqnayxdbqkcjqud.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_glnqsWdFcmaHOzUrfD5fGA_dt6xiB1f';
 
         // --- БАЗОВЫЕ ДАННЫЕ (6 стран для идеальных раундов) ---
-        // Флаги теперь подтягиваются как картинки через id (ISO коды)
         const COUNTRIES = [
             { id: 'ru', name: 'Россия' },
             { id: 'kz', name: 'Казахстан' },
@@ -66,7 +72,6 @@
             { id: 'kg', name: 'Кыргызстан' },
         ];
 
-        // --- РЕЗЕРВНАЯ БИБЛИОТЕКА (На случай если БД пустая или недоступна) ---
         const MOCK_GIFT_LIBRARY = [
             { id: 'g1', name: 'Роза', icon: '🌹', cost: 1 }, { id: 'g2', name: 'Огонь', icon: '🔥', cost: 1 },
             { id: 'g3', name: 'Чай', icon: '☕', cost: 1 }, { id: 'g4', name: 'Лайк', icon: '👍', cost: 1 },
@@ -86,14 +91,31 @@
             { id: 'g31', name: 'Планета', icon: '🪐', cost: 15000 }, { id: 'g32', name: 'Тигр', icon: '🐯', cost: 34999 }
         ];
 
-        // Имена для симуляции донатеров
         const MOCK_NAMES = ["User_99", "AlexPro", "Elena_V", "TiktokKing", "DarkKnight", "Winner_01", "CatLover", "Stark"];
 
+        // --- НАСТРОЙКИ АДАПТИВНЫХ РАЗМЕРОВ (в зависимости от места 1 до 6) ---
+        const RANK_SIZES = [
+            { h: 65, font: 'text-xl', scoreFont: 'text-2xl', flag: 'w-10 h-7', pad: 'p-3', border: 'border-green-500/50', bg: 'bg-black/80' },  // 1 место
+            { h: 56, font: 'text-lg', scoreFont: 'text-xl',  flag: 'w-8 h-6',  pad: 'p-2.5', border: 'border-white/10', bg: 'bg-black/60' },  // 2 место
+            { h: 48, font: 'text-base', scoreFont: 'text-lg',  flag: 'w-7 h-5',  pad: 'p-2', border: 'border-white/10', bg: 'bg-black/60' },    // 3 место
+            { h: 42, font: 'text-sm', scoreFont: 'text-base',  flag: 'w-6 h-4',  pad: 'px-2 py-1.5', border: 'border-white/10', bg: 'bg-black/50' },// 4 место
+            { h: 36, font: 'text-xs', scoreFont: 'text-sm',  flag: 'w-5 h-3.5',pad: 'px-2 py-1', border: 'border-white/5', bg: 'bg-black/40' }, // 5 место
+            { h: 32, font: 'text-[10px]', scoreFont: 'text-xs',  flag: 'w-4 h-3',  pad: 'px-2 py-1', border: 'border-white/5', bg: 'bg-black/40' }  // 6 место
+        ];
+        const LIST_GAP = 8; // Отступ между строками
+
         const TOTAL_ROUNDS = 30;
-        const ROUND_TIMER_SECONDS = 15; // Секунд до выбывания слабейшего
+        const ROUND_PLAY_SECONDS = 15; // Секунды активной игры
+        const ROUND_ELIM_SECONDS = 3;  // Секунды анимации выбывания
+        const ROUND_CELEB_SECONDS = 5; // Секунды празднования победителя
+
+        const formatTime = (seconds) => {
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        };
 
         const App = () => {
-            // --- СОСТОЯНИЯ ---
             const [giftLibrary, setGiftLibrary] = useState([]);
             const [isLoadingGifts, setIsLoadingGifts] = useState(true);
             
@@ -102,55 +124,41 @@
             const [activeCountries, setActiveCountries] = useState(COUNTRIES.map(c => c.id));
             const [round, setRound] = useState(1);
             
-            // 'PLAYING' | 'CELEBRATING' | 'GAME_OVER'
+            // Фазы: PLAYING -> ELIMINATING -> CELEBRATING -> GAME_OVER
             const [phase, setPhase] = useState('PLAYING'); 
-            const [timeLeft, setTimeLeft] = useState(ROUND_TIMER_SECONDS);
+            const [timeLeft, setTimeLeft] = useState(ROUND_PLAY_SECONDS);
+            const [eliminatedJustNow, setEliminatedJustNow] = useState(null); // Кто выбывает прямо сейчас
             
             const [pulsingIds, setPulsingIds] = useState(new Set());
             const [isDemoActive, setIsDemoActive] = useState(true);
 
-            // --- ЗАГРУЗКА ПОДАРКОВ ИЗ SUPABASE ---
+            // --- ЗАГРУЗКА ПОДАРКОВ ---
             useEffect(() => {
                 const fetchGifts = async () => {
                     try {
                         const response = await fetch(`${SUPABASE_URL}/rest/v1/gift_library?select=*`, {
-                            headers: {
-                                'apikey': SUPABASE_KEY,
-                                'Authorization': `Bearer ${SUPABASE_KEY}`
-                            }
+                            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
                         });
-                        
-                        if (!response.ok) throw new Error('Ошибка сети при загрузке данных');
-                        
+                        if (!response.ok) throw new Error('Ошибка сети');
                         const data = await response.json();
-                        
-                        if (data && data.length >= 24) {
-                            setGiftLibrary(data);
-                        } else {
-                            console.warn("В Supabase недостаточно подарков (нужно минимум 24). Использую резервные данные.");
-                            setGiftLibrary(MOCK_GIFT_LIBRARY);
-                        }
+                        if (data && data.length >= 24) setGiftLibrary(data);
+                        else setGiftLibrary(MOCK_GIFT_LIBRARY);
                     } catch (error) {
-                        console.error("Ошибка загрузки из Supabase:", error);
                         setGiftLibrary(MOCK_GIFT_LIBRARY); 
                     } finally {
                         setIsLoadingGifts(false);
                     }
                 };
-
                 fetchGifts();
             }, []);
 
-            // Распределение подарков на 6 стран (по 4 штуки)
+            // Распределение подарков
             const countryGifts = useMemo(() => {
                 if (giftLibrary.length === 0) return {};
-                
                 const map = {};
                 let sortedLib = [...giftLibrary].sort((a,b) => (a.cost || 0) - (b.cost || 0));
-                
                 const tierSize = Math.floor(sortedLib.length / 4);
                 const shuffle = (arr) => arr.sort(() => Math.random() - 0.5);
-                
                 const cheap = shuffle(sortedLib.slice(0, tierSize));
                 const medium = shuffle(sortedLib.slice(tierSize, tierSize * 2));
                 const expensive = shuffle(sortedLib.slice(tierSize * 2, tierSize * 3));
@@ -167,76 +175,85 @@
                 return map;
             }, [giftLibrary]);
 
-            // Инициализация при старте/новом раунде
+            // Инициализация при старте
             useEffect(() => {
-                if (phase === 'PLAYING' && activeCountries.length === COUNTRIES.length) {
+                if (activeCountries.length === COUNTRIES.length && Object.keys(scores).length === 0) {
                     const initialScores = {};
                     COUNTRIES.forEach(c => initialScores[c.id] = 0);
                     setScores(initialScores);
-                    
-                    if (Object.keys(wins).length === 0) {
-                        const initialWins = {};
-                        COUNTRIES.forEach(c => initialWins[c.id] = 0);
-                        setWins(initialWins);
-                    }
+                    const initialWins = {};
+                    COUNTRIES.forEach(c => initialWins[c.id] = 0);
+                    setWins(initialWins);
                 }
-            }, [phase, activeCountries]);
+            }, []);
 
-            // --- ИГРОВОЙ ЦИКЛ (ТАЙМЕР И ВЫБЫВАНИЕ) ---
+            // --- МАШИНА СОСТОЯНИЙ (ТАЙМЕР ИГРЫ) ---
             useEffect(() => {
-                if (!isDemoActive || phase !== 'PLAYING' || isLoadingGifts) return;
+                // Таймер больше не зависит от очков (не сбрасывается при каждом донате)
+                if (isLoadingGifts || phase === 'GAME_OVER') return;
 
                 const timer = setInterval(() => {
-                    setTimeLeft(prev => {
-                        if (prev <= 1) {
-                            eliminateLowestCountry();
-                            return ROUND_TIMER_SECONDS;
-                        }
-                        return prev - 1;
-                    });
+                    setTimeLeft(prev => prev - 1);
                 }, 1000);
 
                 return () => clearInterval(timer);
-            }, [phase, isDemoActive, scores, activeCountries, isLoadingGifts]);
+            }, [phase, isLoadingGifts]);
 
-            const eliminateLowestCountry = () => {
-                if (activeCountries.length <= 1) return;
-
-                let minScore = Infinity;
-                let lowestCountryId = null;
-
-                activeCountries.forEach(id => {
-                    const s = scores[id] || 0;
-                    if (s < minScore) {
-                        minScore = s;
-                        lowestCountryId = id;
+            // --- ЛОГИКА ФАЗ (Переходы при окончании времени) ---
+            useEffect(() => {
+                if (timeLeft <= 0) {
+                    if (phase === 'PLAYING') {
+                        // Находим слабейшего
+                        let minScore = Infinity;
+                        let lowestId = null;
+                        activeCountries.forEach(id => {
+                            const s = scores[id] || 0;
+                            if (s < minScore) {
+                                minScore = s;
+                                lowestId = id;
+                            }
+                        });
+                        setEliminatedJustNow(lowestId);
+                        setPhase('ELIMINATING');
+                        setTimeLeft(ROUND_ELIM_SECONDS);
+                    } 
+                    else if (phase === 'ELIMINATING') {
+                        // Фактически удаляем страну и проверяем остаток
+                        const newActive = activeCountries.filter(id => id !== eliminatedJustNow);
+                        setActiveCountries(newActive);
+                        setEliminatedJustNow(null);
+                        
+                        if (newActive.length === 1) {
+                            // Победитель определен
+                            setPhase('CELEBRATING');
+                            setWins(w => ({ ...w, [newActive[0]]: (w[newActive[0]] || 0) + 1 }));
+                            setTimeLeft(ROUND_CELEB_SECONDS);
+                        } else {
+                            // Продолжаем раунд
+                            setPhase('PLAYING');
+                            setTimeLeft(ROUND_PLAY_SECONDS);
+                        }
                     }
-                });
-
-                const newActive = activeCountries.filter(id => id !== lowestCountryId);
-                setActiveCountries(newActive);
-
-                if (newActive.length === 1) {
-                    const winnerId = newActive[0];
-                    setPhase('CELEBRATING');
-                    setWins(prev => ({ ...prev, [winnerId]: (prev[winnerId] || 0) + 1 }));
-                    
-                    setTimeout(() => {
+                    else if (phase === 'CELEBRATING') {
+                        // Перезапуск на следующий раунд
                         if (round < TOTAL_ROUNDS) {
                             setRound(r => r + 1);
                             setActiveCountries(COUNTRIES.map(c => c.id));
-                            setScores({}); 
-                            setTimeLeft(ROUND_TIMER_SECONDS);
+                            const resetScores = {};
+                            COUNTRIES.forEach(c => resetScores[c.id] = 0);
+                            setScores(resetScores);
                             setPhase('PLAYING');
+                            setTimeLeft(ROUND_PLAY_SECONDS);
                         } else {
                             setPhase('GAME_OVER');
                         }
-                    }, 5000);
+                    }
                 }
-            };
+            }, [timeLeft, phase, activeCountries, scores, eliminatedJustNow, round]);
 
             // --- ОБРАБОТКА ПОДАРКА ---
-            const handleGift = (countryId, giftInfo, username) => {
+            const handleGift = (countryId, giftInfo) => {
+                // Запрещаем донат выбывающим и во время пауз
                 if (!activeCountries.includes(countryId) || phase !== 'PLAYING') return;
                 if (!giftInfo) return;
 
@@ -273,116 +290,136 @@
                     const gift = countryAvailGifts[giftIdx];
                     if (!gift) return;
 
-                    const randomName = MOCK_NAMES[Math.floor(Math.random() * MOCK_NAMES.length)];
-                    
-                    handleGift(randomCountryId, gift, randomName);
+                    handleGift(randomCountryId, gift);
                 }, Math.random() * 800 + 400);
 
                 return () => clearInterval(interval);
             }, [isDemoActive, phase, activeCountries, countryGifts, isLoadingGifts]);
 
             // --- СОРТИРОВКА ДЛЯ ЛИДЕРБОРДА ---
-            const sortedActiveCountries = useMemo(() => {
-                return activeCountries
+            const sortedCountriesWithEliminating = useMemo(() => {
+                // Если сейчас кто-то выбывает, он всё еще показывается (но с анимацией)
+                const listToRender = phase === 'ELIMINATING' && eliminatedJustNow && !activeCountries.includes(eliminatedJustNow)
+                    ? [...activeCountries, eliminatedJustNow] 
+                    : activeCountries;
+
+                return listToRender
                     .map(id => ({ ...COUNTRIES.find(c => c.id === id), score: scores[id] || 0 }))
                     .sort((a, b) => b.score - a.score);
-            }, [activeCountries, scores]);
+            }, [activeCountries, scores, phase, eliminatedJustNow]);
 
-            const maxScore = sortedActiveCountries[0]?.score || 1;
+            const maxScore = sortedCountriesWithEliminating[0]?.score || 1;
             const roundWinner = phase === 'CELEBRATING' ? COUNTRIES.find(c => c.id === activeCountries[0]) : null;
 
             if (isLoadingGifts) {
                 return (
                     <div className="w-full h-screen demo-background flex items-center justify-center text-white font-sans text-2xl animate-pulse">
-                        Подключение к базе данных подарков...
+                        Подключение к базе данных...
                     </div>
                 );
             }
 
             return (
-                <div className="w-full h-screen demo-background flex flex-col items-center relative overflow-hidden text-white font-sans">
+                <div className="w-full h-screen demo-background flex flex-col items-center overflow-hidden text-white font-sans">
                     
-                    {/* --- ВЕРХНЯЯ ПАНЕЛЬ (ПОБЕДЫ И ИНФО) --- */}
-                    <div className="w-full h-[8%] min-h-[60px] bg-black/60 border-b border-white/10 flex items-center justify-between px-6 z-20 backdrop-blur-md shrink-0">
-                        {/* Статистика побед */}
-                        <div className="flex gap-4 overflow-x-auto items-center pr-4 hide-scrollbar">
-                            <span className="text-gray-400 text-xs font-bold uppercase mr-2 tracking-widest">Победы:</span>
+                    {/* --- ВЕРХНЯЯ ПАНЕЛЬ (8% ВЫСОТЫ) --- */}
+                    <div className="w-full shrink-0 h-[8%] min-h-[50px] bg-black/60 border-b border-white/10 flex items-center justify-between px-6 z-20">
+                        <div className="flex gap-4 overflow-x-auto items-center pr-4 hide-scrollbar w-full">
+                            <span className="text-gray-400 text-[10px] font-bold uppercase tracking-widest shrink-0">Победы:</span>
                             {COUNTRIES.map(c => (
-                                <div key={c.id} className="flex items-center bg-white/5 rounded-full px-3 py-1 border border-white/10">
-                                    {/* Реальные картинки флагов через API */}
-                                    <img src={`https://flagcdn.com/w80/${c.id}.png`} className="w-5 h-4 rounded-sm object-cover mr-2 drop-shadow-md" alt={c.name} />
-                                    <span className="font-bold text-green-400">{wins[c.id] || 0}</span>
+                                <div key={c.id} className="flex items-center bg-white/5 rounded-full px-2 py-0.5 border border-white/10 shrink-0">
+                                    <img src={`https://flagcdn.com/w80/${c.id}.png`} className="w-4 h-3 rounded-[2px] object-cover mr-1 drop-shadow-md" alt={c.name} />
+                                    <span className="font-bold text-green-400 text-xs">{wins[c.id] || 0}</span>
                                 </div>
                             ))}
                         </div>
-                        {/* Демо-переключатель */}
-                        <div className="flex items-center gap-4 flex-shrink-0">
-                            <button onClick={() => setIsDemoActive(!isDemoActive)} className={`text-[10px] px-2 py-1 rounded-full border ${isDemoActive ? 'border-green-500 text-green-400' : 'border-gray-500 text-gray-500'} cursor-pointer`}>
-                                {isDemoActive ? 'Demo ON' : 'Demo OFF'}
-                            </button>
-                        </div>
+                        <button onClick={() => setIsDemoActive(!isDemoActive)} className={`text-[10px] px-2 py-1 rounded-full border ${isDemoActive ? 'border-green-500 text-green-400' : 'border-gray-500 text-gray-500'} cursor-pointer shrink-0 ml-2`}>
+                            {isDemoActive ? 'Demo ON' : 'OFF'}
+                        </button>
                     </div>
 
-                    {/* --- МЕСТО ПОД ВЕБКАМЕРУ (Стример) --- */}
-                    <div className="w-full h-[20%] min-h-[160px] flex items-center justify-center p-4 z-10 shrink-0">
-                        <div className="w-[350px] h-full border-2 border-dashed border-white/20 rounded-2xl bg-black/20 backdrop-blur-sm flex flex-col items-center justify-center relative overflow-hidden">
-                            <span className="text-white/30 text-xl font-bold uppercase tracking-widest text-center px-4">
-                                Место для вебкамеры<br/>
-                                <span className="text-xs font-normal">(Разместите слой вебки под виджетом в OBS)</span>
+                    {/* --- МЕСТО ПОД ВЕБКАМЕРУ (20% ВЫСОТЫ) --- */}
+                    <div className="w-full shrink-0 h-[20%] min-h-[140px] flex items-center justify-center p-3 z-10">
+                        <div className="w-[320px] h-full border border-dashed border-white/20 rounded-xl bg-black/20 flex flex-col items-center justify-center relative overflow-hidden">
+                            <span className="text-white/30 text-lg font-bold uppercase tracking-widest text-center">
+                                Вебкамера<br/><span className="text-[10px] font-normal lowercase">(слой в obs под виджетом)</span>
                             </span>
-                            {/* Декоративные уголки */}
-                            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-cyan-500 rounded-tl-xl"></div>
-                            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-cyan-500 rounded-tr-xl"></div>
-                            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-cyan-500 rounded-bl-xl"></div>
-                            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-cyan-500 rounded-br-xl"></div>
                         </div>
                     </div>
 
-                    {/* --- КОМПАКТНЫЙ РЕЙТИНГ ПО ЦЕНТРУ С ТАЙМЕРОМ НАД НИМ --- */}
-                    <div className="flex-1 w-full max-w-[500px] relative px-4 z-10 flex flex-col justify-center">
-                        
-                        {/* Красивый анимированный таймер и раунд */}
-                        <div className="flex flex-col items-center mb-6 z-20">
-                            <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-yellow-500 uppercase tracking-widest drop-shadow-[0_0_15px_rgba(255,105,180,0.4)] animate-pulse">
-                                Раунд {round}/{TOTAL_ROUNDS}
-                            </div>
-                            <div className={`text-xl font-bold uppercase tracking-widest mt-2 transition-colors duration-300 ${timeLeft <= 5 ? 'text-red-500 drop-shadow-[0_0_10px_rgba(255,0,0,0.8)]' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,255,0.5)]'}`}>
-                                {phase === 'PLAYING' ? `Выбывание через: ${timeLeft}с` : 'Ожидание...'}
-                            </div>
+                    {/* --- ТАЙМЕР И ФАЗА (12% ВЫСОТЫ) --- */}
+                    <div className="w-full shrink-0 h-[12%] flex flex-col items-center justify-center z-20 relative">
+                        <div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-yellow-500 uppercase tracking-widest drop-shadow-[0_0_10px_rgba(255,105,180,0.5)]">
+                            Раунд {round}/{TOTAL_ROUNDS}
                         </div>
+                        
+                        {/* Формат времени 00:00 */}
+                        <div className={`text-4xl font-black font-mono mt-1 drop-shadow-[0_0_15px_rgba(0,0,0,0.8)] transition-colors duration-300
+                            ${phase === 'ELIMINATING' ? 'text-red-500 animate-pulse' : 
+                              (phase === 'PLAYING' && timeLeft <= 5) ? 'text-red-400' : 'text-cyan-400'}`}>
+                            {formatTime(timeLeft)}
+                        </div>
+                        
+                        <div className="text-[10px] text-gray-400 uppercase tracking-widest mt-1">
+                            {phase === 'PLAYING' ? 'До выбывания' : 
+                             phase === 'ELIMINATING' ? 'Выбывание...' : 
+                             phase === 'CELEBRATING' ? 'Смена раунда...' : 'Конец игры'}
+                        </div>
+                    </div>
 
+                    {/* --- АДАПТИВНЫЙ РЕЙТИНГ (22% ВЫСОТЫ) --- */}
+                    {/* flex-1 позволяет блоку занять все свободное место между фиксированными блоками,
+                        мы центрируем контент внутри него, чтобы абсолютное позиционирование не уехало */}
+                    <div className="w-full flex-1 max-w-[450px] relative px-4 z-10 flex flex-col justify-center items-center min-h-[100px]">
+                        
                         {phase === 'CELEBRATING' && roundWinner && (
                             <div className="absolute inset-0 z-50 flex items-center justify-center winner-anim">
-                                <div className="bg-gradient-to-br from-yellow-500 via-orange-500 to-red-500 p-1 rounded-3xl shadow-[0_0_100px_rgba(255,165,0,0.6)]">
-                                    <div className="bg-black/90 rounded-[22px] px-10 py-8 text-center backdrop-blur-xl flex flex-col items-center">
-                                        <img src={`https://flagcdn.com/w80/${roundWinner.id}.png`} className="w-24 h-auto rounded-md drop-shadow-2xl mb-4" alt="winner" />
-                                        <h2 className="text-3xl font-black text-white uppercase tracking-wider mb-2">ПОБЕДИТЕЛЬ РАУНДА!</h2>
-                                        <h3 className="text-xl text-yellow-400 font-bold">+1 в копилку</h3>
+                                <div className="bg-gradient-to-br from-yellow-500 via-orange-500 to-red-500 p-0.5 rounded-3xl shadow-[0_0_80px_rgba(255,165,0,0.8)]">
+                                    <div className="bg-black/95 rounded-[22px] px-8 py-6 text-center backdrop-blur-xl flex flex-col items-center border border-yellow-500/30">
+                                        <img src={`https://flagcdn.com/w80/${roundWinner.id}.png`} className="w-20 h-auto rounded-md drop-shadow-2xl mb-3 border border-white/20" alt="winner" />
+                                        <h2 className="text-2xl font-black text-white uppercase tracking-wider mb-1">ПОБЕДИТЕЛЬ РАУНДА!</h2>
+                                        <h3 className="text-lg text-yellow-400 font-bold">+1 в копилку</h3>
                                     </div>
                                 </div>
                             </div>
                         )}
 
-                        {/* Изменен интервал и размер текста для большей компактности */}
-                        <div className="relative w-full h-full" style={{ height: `${sortedActiveCountries.length * 60}px`, maxHeight: '100%' }}>
-                            {sortedActiveCountries.map((country, index) => {
-                                const translateY = index * 60;
-                                const isFirst = index === 0;
-                                const isLast = index === sortedActiveCountries.length - 1;
+                        <div className="relative w-full" style={{ 
+                            // Динамический расчет общей высоты контейнера чтобы отцентрировать его ровно
+                            height: `${sortedCountriesWithEliminating.reduce((sum, _, i) => sum + (RANK_SIZES[i]?.h || 30) + LIST_GAP, 0)}px` 
+                        }}>
+                            {sortedCountriesWithEliminating.map((country, index) => {
+                                // Достаем конфигурацию стилей для конкретного места
+                                const rankConfig = RANK_SIZES[index] || RANK_SIZES[RANK_SIZES.length - 1];
+                                
+                                // Расчет координаты Y на основе высот предыдущих элементов
+                                let translateY = 0;
+                                for (let i = 0; i < index; i++) translateY += (RANK_SIZES[i]?.h || 30) + LIST_GAP;
+
+                                const isLastInPlaying = index === sortedCountriesWithEliminating.length - 1 && phase === 'PLAYING';
+                                const isDanger = isLastInPlaying && timeLeft <= 5;
+                                const isEliminatingNow = phase === 'ELIMINATING' && country.id === eliminatedJustNow;
                                 const isPulsing = pulsingIds.has(country.id);
                                 const progressPercentage = Math.max(2, (country.score / maxScore) * 100);
 
                                 return (
                                     <div 
                                         key={country.id}
-                                        className={`absolute left-0 right-0 h-[50px] bg-black/60 backdrop-blur-md rounded-2xl flex items-center p-3 border transition-all duration-500 ease-in-out ${isLast && phase === 'PLAYING' && timeLeft <= 5 ? 'border-red-500/80 shadow-[0_0_15px_rgba(255,0,0,0.5)] animate-pulse' : 'border-white/10'}`}
-                                        style={{ transform: `translateY(${translateY}px)`, zIndex: 20 - index }}
+                                        className={`absolute left-0 right-0 rounded-2xl flex items-center overflow-hidden border transition-all duration-500 ease-in-out
+                                            ${rankConfig.bg} ${rankConfig.pad}
+                                            ${isDanger ? 'border-red-500/80 shadow-[0_0_20px_rgba(255,0,0,0.6)] animate-pulse bg-red-950/40' : rankConfig.border}
+                                            ${isEliminatingNow ? 'eliminating-anim z-50' : 'z-20'}
+                                        `}
+                                        style={{ 
+                                            transform: `translateY(${translateY}px)`, 
+                                            height: `${rankConfig.h}px`,
+                                            zIndex: 20 - index // Лидеры перекрывают нижних если что
+                                        }}
                                     >
-                                        <img src={`https://flagcdn.com/w80/${country.id}.png`} className="w-8 h-6 rounded-sm object-cover mr-3 drop-shadow-md" alt={country.name} />
-                                        <div className="font-bold text-lg text-white flex-1">{country.name}</div>
+                                        <img src={`https://flagcdn.com/w80/${country.id}.png`} className={`${rankConfig.flag} rounded-sm object-cover mr-3 drop-shadow-md border border-white/10`} alt={country.name} />
+                                        <div className={`font-bold text-white flex-1 ${rankConfig.font} truncate`}>{country.name}</div>
                                         <div className="flex flex-col items-end z-10 ml-2">
-                                            {/* Шрифт очков уменьшен до text-xl */}
-                                            <span className={`font-bold text-xl tabular-nums ${isPulsing ? 'score-pulse' : ''} text-green-400`}>
+                                            <span className={`font-black tabular-nums ${rankConfig.scoreFont} ${isPulsing ? 'score-pulse' : ''} ${isDanger ? 'text-white' : 'text-green-400'}`}>
                                                 {country.score.toLocaleString('ru-RU')}
                                             </span>
                                         </div>
@@ -396,49 +433,44 @@
                         </div>
                     </div>
 
-                    {/* --- СЕТКА ПОДАРКОВ ВНИЗУ (ИНСТРУКЦИЯ ДЛЯ ЗРИТЕЛЕЙ) --- */}
-                    {/* Меню поднято: h-[42vh] и добавлен нижний отступ pb-12 для "выталкивания" контента наверх */}
-                    <div className="w-full h-[42vh] shrink-0 bg-black/80 border-t border-white/10 p-2 pb-12 z-20 flex flex-col backdrop-blur-xl">
-                        <div className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 mt-1">
-                            ⬇️ Отправляйте эти подарки для поддержки своей страны ⬇️
+                    {/* --- СЕТКА ПОДАРКОВ ВНИЗУ (38% ВЫСОТЫ) --- */}
+                    <div className="w-full shrink-0 h-[38%] bg-black/90 border-t border-white/10 p-2 pb-8 z-30 flex flex-col backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.8)]">
+                        <div className="text-center text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 mt-0.5">
+                            ⬇️ Подарки для поддержки стран ⬇️
                         </div>
-                        {/* Сетка стран: 3 колонки х 2 строки для 6 стран */}
-                        <div className="grid grid-cols-3 grid-rows-2 gap-2 h-full pb-2">
+                        <div className="grid grid-cols-3 grid-rows-2 gap-1.5 h-full pb-1">
                             {COUNTRIES.map(country => {
                                 const isActive = activeCountries.includes(country.id);
+                                const isEliminatingNow = phase === 'ELIMINATING' && country.id === eliminatedJustNow;
+                                const effectivelyActive = isActive || isEliminatingNow;
                                 const gifts = countryGifts[country.id] || [];
 
                                 return (
-                                    <div key={country.id} className={`flex flex-col rounded-xl border ${isActive ? 'bg-white/5 border-white/10' : 'bg-white/5 border-red-500/30 opacity-40 grayscale'} overflow-hidden relative transition-all duration-500`}>
+                                    <div key={country.id} className={`flex flex-col rounded-xl border ${effectivelyActive ? 'bg-white/5 border-white/10' : 'bg-black border-red-900/50 opacity-30 grayscale'} overflow-hidden relative transition-all duration-500`}>
                                         
-                                        {/* Заголовок страны с настоящим флагом */}
-                                        <div className="bg-white/10 py-1 flex items-center justify-center gap-1.5 border-b border-white/5">
-                                            <img src={`https://flagcdn.com/w80/${country.id}.png`} className="w-5 h-3.5 rounded-sm object-cover drop-shadow-sm" alt={country.name} />
-                                            <span className="text-xs font-bold text-white truncate max-w-[80px]">{country.name}</span>
+                                        <div className="bg-white/10 py-1 flex items-center justify-center gap-1.5 border-b border-white/5 shrink-0">
+                                            <img src={`https://flagcdn.com/w80/${country.id}.png`} className="w-4 h-3 rounded-sm object-cover drop-shadow-sm border border-white/20" alt={country.name} />
+                                            <span className="text-[10px] font-bold text-white truncate max-w-[70px] uppercase tracking-wider">{country.name}</span>
                                         </div>
                                         
-                                        {/* Сетка 4 подарков */}
-                                        <div className="grid grid-cols-2 grid-rows-2 flex-1 p-1 gap-1">
+                                        <div className="grid grid-cols-2 grid-rows-2 flex-1 p-0.5 gap-0.5">
                                             {gifts.map((gift, idx) => gift ? (
-                                                <div key={gift.id || idx} className="bg-black/40 rounded-lg flex flex-col items-center justify-center relative overflow-hidden group">
-                                                    
-                                                    {/* ЛОГИКА ОТОБРАЖЕНИЯ ИЗОБРАЖЕНИЙ ПОДАРКОВ ИЗ SUPABASE */}
+                                                <div key={gift.id || idx} className="bg-black/50 rounded-lg flex flex-col items-center justify-center relative overflow-hidden group">
                                                     {gift.icon && gift.icon.startsWith('http') ? (
-                                                        <img src={gift.icon} className="w-8 h-8 object-contain mb-1 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]" alt={gift.name} />
+                                                        <img src={gift.icon} className="w-6 h-6 object-contain mb-0.5 drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]" alt={gift.name} />
                                                     ) : (
-                                                        <span className="text-2xl mb-1 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">{gift.icon}</span>
+                                                        <span className="text-xl mb-0.5 drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">{gift.icon}</span>
                                                     )}
-                                                    
-                                                    <div className="flex items-center text-[9px] font-black text-yellow-400 bg-black/50 px-1.5 py-0.5 rounded-full">
+                                                    <div className="flex items-center text-[8px] font-black text-yellow-400 bg-black/60 px-1.5 py-0.5 rounded-full border border-yellow-500/20">
                                                         {gift.cost}
                                                     </div>
                                                 </div>
                                             ) : null)}
                                         </div>
 
-                                        {!isActive && (
-                                            <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center backdrop-blur-[1px]">
-                                                <span className="text-red-500 font-black uppercase text-xl rotate-[-15deg] border-2 border-red-500 px-2 py-0.5 rounded bg-black/50">ВЫБЫЛ</span>
+                                        {!effectivelyActive && (
+                                            <div className="absolute inset-0 bg-red-900/50 flex items-center justify-center backdrop-blur-[2px] z-10">
+                                                <span className="text-red-500 font-black uppercase text-sm rotate-[-15deg] border-2 border-red-500 px-1.5 py-0.5 rounded bg-black/80 shadow-[0_0_10px_rgba(255,0,0,0.5)]">ВЫБЫЛ</span>
                                             </div>
                                         )}
                                     </div>
