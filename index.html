@@ -56,13 +56,14 @@
         const SUPABASE_KEY = 'sb_publishable_glnqsWdFcmaHOzUrfD5fGA_dt6xiB1f';
 
         // --- БАЗОВЫЕ ДАННЫЕ (6 стран для идеальных раундов) ---
+        // Флаги теперь подтягиваются как картинки через id (ISO коды)
         const COUNTRIES = [
-            { id: 'ru', name: 'Россия', flag: '🇷🇺' },
-            { id: 'kz', name: 'Казахстан', flag: '🇰🇿' },
-            { id: 'ua', name: 'Украина', flag: '🇺🇦' },
-            { id: 'by', name: 'Беларусь', flag: '🇧🇾' },
-            { id: 'uz', name: 'Узбекистан', flag: '🇺🇿' },
-            { id: 'kg', name: 'Кыргызстан', flag: '🇰🇬' },
+            { id: 'ru', name: 'Россия' },
+            { id: 'kz', name: 'Казахстан' },
+            { id: 'ua', name: 'Украина' },
+            { id: 'by', name: 'Беларусь' },
+            { id: 'uz', name: 'Узбекистан' },
+            { id: 'kg', name: 'Кыргызстан' },
         ];
 
         // --- РЕЗЕРВНАЯ БИБЛИОТЕКА (На случай если БД пустая или недоступна) ---
@@ -123,7 +124,6 @@
                         
                         const data = await response.json();
                         
-                        // Если данных достаточно (минимум 24 подарка для 6 стран), используем их
                         if (data && data.length >= 24) {
                             setGiftLibrary(data);
                         } else {
@@ -132,7 +132,7 @@
                         }
                     } catch (error) {
                         console.error("Ошибка загрузки из Supabase:", error);
-                        setGiftLibrary(MOCK_GIFT_LIBRARY); // Фолбэк на замоканные данные
+                        setGiftLibrary(MOCK_GIFT_LIBRARY); 
                     } finally {
                         setIsLoadingGifts(false);
                     }
@@ -141,15 +141,13 @@
                 fetchGifts();
             }, []);
 
-            // Безопасное распределение подарков на 6 стран (по 4 штуки каждой из разных категорий)
+            // Распределение подарков на 6 стран (по 4 штуки)
             const countryGifts = useMemo(() => {
                 if (giftLibrary.length === 0) return {};
                 
                 const map = {};
-                // Сортируем подарки по возрастанию цены
                 let sortedLib = [...giftLibrary].sort((a,b) => (a.cost || 0) - (b.cost || 0));
                 
-                // Делим доступные подарки на 4 ценовые категории
                 const tierSize = Math.floor(sortedLib.length / 4);
                 const shuffle = (arr) => arr.sort(() => Math.random() - 0.5);
                 
@@ -158,7 +156,6 @@
                 const expensive = shuffle(sortedLib.slice(tierSize * 2, tierSize * 3));
                 const superExpensive = shuffle(sortedLib.slice(tierSize * 3));
                 
-                // Раздаем каждой стране по одному уникальному подарку из каждой ценовой категории
                 COUNTRIES.forEach((country, index) => {
                     map[country.id] = [
                         cheap[index % cheap.length],
@@ -192,7 +189,6 @@
                 const timer = setInterval(() => {
                     setTimeLeft(prev => {
                         if (prev <= 1) {
-                            // Время вышло - выбывает страна с минимальным счетом
                             eliminateLowestCountry();
                             return ROUND_TIMER_SECONDS;
                         }
@@ -206,7 +202,6 @@
             const eliminateLowestCountry = () => {
                 if (activeCountries.length <= 1) return;
 
-                // Находим страну с минимальным счетом среди активных
                 let minScore = Infinity;
                 let lowestCountryId = null;
 
@@ -221,18 +216,16 @@
                 const newActive = activeCountries.filter(id => id !== lowestCountryId);
                 setActiveCountries(newActive);
 
-                // Если осталась одна страна - она победитель раунда
                 if (newActive.length === 1) {
                     const winnerId = newActive[0];
                     setPhase('CELEBRATING');
                     setWins(prev => ({ ...prev, [winnerId]: (prev[winnerId] || 0) + 1 }));
                     
-                    // Переход к следующему раунду через 5 секунд
                     setTimeout(() => {
                         if (round < TOTAL_ROUNDS) {
                             setRound(r => r + 1);
                             setActiveCountries(COUNTRIES.map(c => c.id));
-                            setScores({}); // Сброс очков
+                            setScores({}); 
                             setTimeLeft(ROUND_TIMER_SECONDS);
                             setPhase('PLAYING');
                         } else {
@@ -244,15 +237,12 @@
 
             // --- ОБРАБОТКА ПОДАРКА ---
             const handleGift = (countryId, giftInfo, username) => {
-                // Игнорируем подарки для выбывших стран
                 if (!activeCountries.includes(countryId) || phase !== 'PLAYING') return;
-                if (!giftInfo) return; // Защита от непредвиденных пустых подарков
+                if (!giftInfo) return;
 
-                // Добавляем очки (учитываем cost из Supabase)
                 const cost = giftInfo.cost || 0;
                 setScores(prev => ({ ...prev, [countryId]: (prev[countryId] || 0) + cost }));
 
-                // Анимация пульсации
                 setPulsingIds(prev => new Set(prev).add(countryId));
                 setTimeout(() => {
                     setPulsingIds(prev => {
@@ -270,12 +260,10 @@
                 const interval = setInterval(() => {
                     if (activeCountries.length === 0) return;
                     
-                    // Выбираем случайную активную страну
                     const randomCountryId = activeCountries[Math.floor(Math.random() * activeCountries.length)];
                     const countryAvailGifts = countryGifts[randomCountryId];
                     if (!countryAvailGifts || countryAvailGifts.length === 0) return;
                     
-                    // Выбираем подарок (шансы: 60% дешевый, 30% средний, 8% дорогой, 2% супер)
                     const rand = Math.random();
                     let giftIdx = 0;
                     if (rand > 0.6 && rand <= 0.9) giftIdx = Math.min(1, countryAvailGifts.length - 1);
@@ -288,7 +276,7 @@
                     const randomName = MOCK_NAMES[Math.floor(Math.random() * MOCK_NAMES.length)];
                     
                     handleGift(randomCountryId, gift, randomName);
-                }, Math.random() * 800 + 400); // Быстрый темп
+                }, Math.random() * 800 + 400);
 
                 return () => clearInterval(interval);
             }, [isDemoActive, phase, activeCountries, countryGifts, isLoadingGifts]);
@@ -321,21 +309,14 @@
                             <span className="text-gray-400 text-xs font-bold uppercase mr-2 tracking-widest">Победы:</span>
                             {COUNTRIES.map(c => (
                                 <div key={c.id} className="flex items-center bg-white/5 rounded-full px-3 py-1 border border-white/10">
-                                    <span className="text-xl mr-2 drop-shadow-md">{c.flag}</span>
+                                    {/* Реальные картинки флагов через API */}
+                                    <img src={`https://flagcdn.com/w80/${c.id}.png`} className="w-5 h-4 rounded-sm object-cover mr-2 drop-shadow-md" alt={c.name} />
                                     <span className="font-bold text-green-400">{wins[c.id] || 0}</span>
                                 </div>
                             ))}
                         </div>
-                        {/* Раунд и Демо-переключатель */}
+                        {/* Демо-переключатель */}
                         <div className="flex items-center gap-4 flex-shrink-0">
-                            <div className="text-right">
-                                <div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-yellow-500 uppercase tracking-widest">
-                                    Раунд {round}/{TOTAL_ROUNDS}
-                                </div>
-                                <div className="text-xs text-gray-400 uppercase tracking-widest">
-                                    {phase === 'PLAYING' ? `Выбывание через: ${timeLeft}с` : 'Ожидание...'}
-                                </div>
-                            </div>
                             <button onClick={() => setIsDemoActive(!isDemoActive)} className={`text-[10px] px-2 py-1 rounded-full border ${isDemoActive ? 'border-green-500 text-green-400' : 'border-gray-500 text-gray-500'} cursor-pointer`}>
                                 {isDemoActive ? 'Demo ON' : 'Demo OFF'}
                             </button>
@@ -343,7 +324,7 @@
                     </div>
 
                     {/* --- МЕСТО ПОД ВЕБКАМЕРУ (Стример) --- */}
-                    <div className="w-full h-[25%] min-h-[200px] flex items-center justify-center p-4 z-10 shrink-0">
+                    <div className="w-full h-[20%] min-h-[160px] flex items-center justify-center p-4 z-10 shrink-0">
                         <div className="w-[350px] h-full border-2 border-dashed border-white/20 rounded-2xl bg-black/20 backdrop-blur-sm flex flex-col items-center justify-center relative overflow-hidden">
                             <span className="text-white/30 text-xl font-bold uppercase tracking-widest text-center px-4">
                                 Место для вебкамеры<br/>
@@ -357,13 +338,24 @@
                         </div>
                     </div>
 
-                    {/* --- КОМПАКТНЫЙ РЕЙТИНГ ПО ЦЕНТРУ --- */}
+                    {/* --- КОМПАКТНЫЙ РЕЙТИНГ ПО ЦЕНТРУ С ТАЙМЕРОМ НАД НИМ --- */}
                     <div className="flex-1 w-full max-w-[500px] relative px-4 z-10 flex flex-col justify-center">
+                        
+                        {/* Красивый анимированный таймер и раунд */}
+                        <div className="flex flex-col items-center mb-6 z-20">
+                            <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-yellow-500 uppercase tracking-widest drop-shadow-[0_0_15px_rgba(255,105,180,0.4)] animate-pulse">
+                                Раунд {round}/{TOTAL_ROUNDS}
+                            </div>
+                            <div className={`text-xl font-bold uppercase tracking-widest mt-2 transition-colors duration-300 ${timeLeft <= 5 ? 'text-red-500 drop-shadow-[0_0_10px_rgba(255,0,0,0.8)]' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(0,255,255,0.5)]'}`}>
+                                {phase === 'PLAYING' ? `Выбывание через: ${timeLeft}с` : 'Ожидание...'}
+                            </div>
+                        </div>
+
                         {phase === 'CELEBRATING' && roundWinner && (
                             <div className="absolute inset-0 z-50 flex items-center justify-center winner-anim">
                                 <div className="bg-gradient-to-br from-yellow-500 via-orange-500 to-red-500 p-1 rounded-3xl shadow-[0_0_100px_rgba(255,165,0,0.6)]">
                                     <div className="bg-black/90 rounded-[22px] px-10 py-8 text-center backdrop-blur-xl flex flex-col items-center">
-                                        <div className="text-8xl drop-shadow-2xl mb-4">{roundWinner.flag}</div>
+                                        <img src={`https://flagcdn.com/w80/${roundWinner.id}.png`} className="w-24 h-auto rounded-md drop-shadow-2xl mb-4" alt="winner" />
                                         <h2 className="text-3xl font-black text-white uppercase tracking-wider mb-2">ПОБЕДИТЕЛЬ РАУНДА!</h2>
                                         <h3 className="text-xl text-yellow-400 font-bold">+1 в копилку</h3>
                                     </div>
@@ -371,9 +363,10 @@
                             </div>
                         )}
 
-                        <div className="relative w-full h-full" style={{ height: `${sortedActiveCountries.length * 65}px`, maxHeight: '100%' }}>
+                        {/* Изменен интервал и размер текста для большей компактности */}
+                        <div className="relative w-full h-full" style={{ height: `${sortedActiveCountries.length * 60}px`, maxHeight: '100%' }}>
                             {sortedActiveCountries.map((country, index) => {
-                                const translateY = index * 65;
+                                const translateY = index * 60;
                                 const isFirst = index === 0;
                                 const isLast = index === sortedActiveCountries.length - 1;
                                 const isPulsing = pulsingIds.has(country.id);
@@ -382,13 +375,14 @@
                                 return (
                                     <div 
                                         key={country.id}
-                                        className={`absolute left-0 right-0 h-[55px] bg-black/60 backdrop-blur-md rounded-2xl flex items-center p-3 border transition-all duration-500 ease-in-out ${isLast && phase === 'PLAYING' && timeLeft <= 5 ? 'border-red-500/80 shadow-[0_0_15px_rgba(255,0,0,0.5)] animate-pulse' : 'border-white/10'}`}
+                                        className={`absolute left-0 right-0 h-[50px] bg-black/60 backdrop-blur-md rounded-2xl flex items-center p-3 border transition-all duration-500 ease-in-out ${isLast && phase === 'PLAYING' && timeLeft <= 5 ? 'border-red-500/80 shadow-[0_0_15px_rgba(255,0,0,0.5)] animate-pulse' : 'border-white/10'}`}
                                         style={{ transform: `translateY(${translateY}px)`, zIndex: 20 - index }}
                                     >
-                                        <div className="text-3xl mr-3 drop-shadow-md">{country.flag}</div>
+                                        <img src={`https://flagcdn.com/w80/${country.id}.png`} className="w-8 h-6 rounded-sm object-cover mr-3 drop-shadow-md" alt={country.name} />
                                         <div className="font-bold text-lg text-white flex-1">{country.name}</div>
                                         <div className="flex flex-col items-end z-10 ml-2">
-                                            <span className={`font-black text-2xl tabular-nums ${isPulsing ? 'score-pulse' : ''} text-green-400`}>
+                                            {/* Шрифт очков уменьшен до text-xl */}
+                                            <span className={`font-bold text-xl tabular-nums ${isPulsing ? 'score-pulse' : ''} text-green-400`}>
                                                 {country.score.toLocaleString('ru-RU')}
                                             </span>
                                         </div>
@@ -403,8 +397,8 @@
                     </div>
 
                     {/* --- СЕТКА ПОДАРКОВ ВНИЗУ (ИНСТРУКЦИЯ ДЛЯ ЗРИТЕЛЕЙ) --- */}
-                    {/* Высота жестко зафиксирована на 35vh (35% высоты экрана) */}
-                    <div className="w-full h-[35vh] shrink-0 bg-black/80 border-t border-white/10 p-2 z-20 flex flex-col backdrop-blur-xl">
+                    {/* Меню поднято: h-[42vh] и добавлен нижний отступ pb-12 для "выталкивания" контента наверх */}
+                    <div className="w-full h-[42vh] shrink-0 bg-black/80 border-t border-white/10 p-2 pb-12 z-20 flex flex-col backdrop-blur-xl">
                         <div className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 mt-1">
                             ⬇️ Отправляйте эти подарки для поддержки своей страны ⬇️
                         </div>
@@ -417,9 +411,9 @@
                                 return (
                                     <div key={country.id} className={`flex flex-col rounded-xl border ${isActive ? 'bg-white/5 border-white/10' : 'bg-white/5 border-red-500/30 opacity-40 grayscale'} overflow-hidden relative transition-all duration-500`}>
                                         
-                                        {/* Заголовок страны */}
-                                        <div className="bg-white/10 py-1 flex items-center justify-center gap-1 border-b border-white/5">
-                                            <span className="text-lg drop-shadow-sm">{country.flag}</span>
+                                        {/* Заголовок страны с настоящим флагом */}
+                                        <div className="bg-white/10 py-1 flex items-center justify-center gap-1.5 border-b border-white/5">
+                                            <img src={`https://flagcdn.com/w80/${country.id}.png`} className="w-5 h-3.5 rounded-sm object-cover drop-shadow-sm" alt={country.name} />
                                             <span className="text-xs font-bold text-white truncate max-w-[80px]">{country.name}</span>
                                         </div>
                                         
@@ -427,7 +421,14 @@
                                         <div className="grid grid-cols-2 grid-rows-2 flex-1 p-1 gap-1">
                                             {gifts.map((gift, idx) => gift ? (
                                                 <div key={gift.id || idx} className="bg-black/40 rounded-lg flex flex-col items-center justify-center relative overflow-hidden group">
-                                                    <span className="text-2xl mb-1 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">{gift.icon}</span>
+                                                    
+                                                    {/* ЛОГИКА ОТОБРАЖЕНИЯ ИЗОБРАЖЕНИЙ ПОДАРКОВ ИЗ SUPABASE */}
+                                                    {gift.icon && gift.icon.startsWith('http') ? (
+                                                        <img src={gift.icon} className="w-8 h-8 object-contain mb-1 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]" alt={gift.name} />
+                                                    ) : (
+                                                        <span className="text-2xl mb-1 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">{gift.icon}</span>
+                                                    )}
+                                                    
                                                     <div className="flex items-center text-[9px] font-black text-yellow-400 bg-black/50 px-1.5 py-0.5 rounded-full">
                                                         {gift.cost}
                                                     </div>
