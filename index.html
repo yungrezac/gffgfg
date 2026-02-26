@@ -93,16 +93,16 @@
 
         const MOCK_NAMES = ["User_99", "AlexPro", "Elena_V", "TiktokKing", "DarkKnight", "Winner_01", "CatLover", "Stark"];
 
-        // --- НАСТРОЙКИ АДАПТИВНЫХ РАЗМЕРОВ (оптимизированы по высоте) ---
+        // --- НАСТРОЙКИ АДАПТИВНЫХ РАЗМЕРОВ (немного сжаты для увеличенного верха) ---
         const RANK_SIZES = [
-            { h: 60, font: 'text-xl', scoreFont: 'text-2xl', flag: 'w-10 h-7', pad: 'p-3', border: 'border-green-500/50', bg: 'bg-black/80' },  // 1 место
-            { h: 50, font: 'text-lg', scoreFont: 'text-xl',  flag: 'w-8 h-6',  pad: 'p-2.5', border: 'border-white/10', bg: 'bg-black/60' },  // 2 место
-            { h: 44, font: 'text-base', scoreFont: 'text-lg',  flag: 'w-7 h-5',  pad: 'p-2', border: 'border-white/10', bg: 'bg-black/60' },    // 3 место
-            { h: 38, font: 'text-sm', scoreFont: 'text-base',  flag: 'w-6 h-4',  pad: 'px-2 py-1.5', border: 'border-white/10', bg: 'bg-black/50' },// 4 место
-            { h: 34, font: 'text-xs', scoreFont: 'text-sm',  flag: 'w-5 h-3.5',pad: 'px-2 py-1', border: 'border-white/5', bg: 'bg-black/40' }, // 5 место
-            { h: 30, font: 'text-[10px]', scoreFont: 'text-xs',  flag: 'w-4 h-3',  pad: 'px-2 py-1', border: 'border-white/5', bg: 'bg-black/40' }  // 6 место
+            { h: 56, font: 'text-xl', scoreFont: 'text-2xl', flag: 'w-10 h-7', pad: 'p-3', border: 'border-green-500/50', bg: 'bg-black/80' },  // 1 место
+            { h: 48, font: 'text-lg', scoreFont: 'text-xl',  flag: 'w-8 h-6',  pad: 'p-2.5', border: 'border-white/10', bg: 'bg-black/60' },  // 2 место
+            { h: 42, font: 'text-base', scoreFont: 'text-lg',  flag: 'w-7 h-5',  pad: 'p-2', border: 'border-white/10', bg: 'bg-black/60' },    // 3 место
+            { h: 36, font: 'text-sm', scoreFont: 'text-base',  flag: 'w-6 h-4',  pad: 'px-2 py-1.5', border: 'border-white/10', bg: 'bg-black/50' },// 4 место
+            { h: 32, font: 'text-xs', scoreFont: 'text-sm',  flag: 'w-5 h-3.5',pad: 'px-2 py-1', border: 'border-white/5', bg: 'bg-black/40' }, // 5 место
+            { h: 28, font: 'text-[10px]', scoreFont: 'text-xs',  flag: 'w-4 h-3',  pad: 'px-2 py-1', border: 'border-white/5', bg: 'bg-black/40' }  // 6 место
         ];
-        const LIST_GAP = 6; // Отступ между строками уменьшен с 8 до 6
+        const LIST_GAP = 5; // Отступ между строками уменьшен с 6 до 5
 
         // --- ИГРОВЫЕ ТАЙМИНГИ ---
         const TOTAL_ROUNDS = 30;
@@ -333,24 +333,23 @@
                         {isDemoActive ? 'Demo ON' : 'Demo OFF'}
                     </button>
 
-                    {/* --- КРАСИВАЯ ТАБЛИЦА ПОБЕД (18% ВЫСОТЫ) - УМЕНЬШЕНО --- */}
-                    {/* Убрали лишние padding-и сверху и сделали блок компактнее */}
-                    <div className="w-full shrink-0 h-[18%] min-h-[120px] flex flex-col items-center justify-center p-2 pt-2 z-10 relative">
+                    {/* --- КРАСИВАЯ ТАБЛИЦА ПОБЕД (УВЕЛИЧЕННАЯ) --- */}
+                    <div className="w-full shrink-0 h-[22%] min-h-[160px] flex flex-col items-center justify-center p-3 pt-4 z-10 relative">
                         <div className="absolute inset-0 bg-gradient-to-b from-yellow-500/10 to-transparent pointer-events-none"></div>
                         
-                        <h3 className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-500 to-yellow-300 uppercase tracking-[0.2em] drop-shadow-md mb-2 flex items-center gap-2">
-                            <span className="text-lg">🏆</span> Таблица побед <span className="text-lg">🏆</span>
+                        <h3 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-500 to-yellow-300 uppercase tracking-[0.2em] drop-shadow-md mb-3 flex items-center gap-2">
+                            <span className="text-2xl">🏆</span> Таблица побед <span className="text-2xl">🏆</span>
                         </h3>
                         
-                        <div className="grid grid-cols-3 gap-2 w-full max-w-[420px]">
+                        <div className="grid grid-cols-3 gap-3 w-full max-w-[460px]">
                             {COUNTRIES.map(c => (
-                                <div key={c.id} className="bg-black/50 border border-white/10 rounded-xl p-2 flex items-center backdrop-blur-xl shadow-[0_4px_15px_rgba(0,0,0,0.5)] transition-transform hover:scale-105">
-                                    <img src={`https://flagcdn.com/w80/${c.id}.png`} className="w-7 h-5 rounded-sm object-cover shadow-sm mr-2 border border-white/10" alt={c.name} />
+                                <div key={c.id} className="bg-black/50 border border-white/10 rounded-xl p-3 flex items-center backdrop-blur-xl shadow-[0_4px_15px_rgba(0,0,0,0.5)] transition-transform hover:scale-105">
+                                    <img src={`https://flagcdn.com/w80/${c.id}.png`} className="w-10 h-7 rounded-sm shadow-sm mr-3 border border-white/10 object-cover" alt={c.name} />
                                     <div className="flex flex-col justify-center">
-                                        <span className="text-[9px] text-gray-400 uppercase tracking-widest leading-none mb-1 truncate max-w-[60px]">{c.name}</span>
+                                        <span className="text-xs text-gray-400 uppercase tracking-widest leading-none mb-1.5 truncate max-w-[70px]">{c.name}</span>
                                         <div className="flex items-end gap-1 leading-none">
-                                            <span className="text-xl font-black text-green-400 drop-shadow-[0_0_8px_rgba(0,255,136,0.4)] leading-none">{wins[c.id] || 0}</span>
-                                            <span className="text-[8px] text-gray-500 uppercase tracking-wider mb-0.5">побед</span>
+                                            <span className="text-3xl font-black text-green-400 drop-shadow-[0_0_8px_rgba(0,255,136,0.4)] leading-none">{wins[c.id] || 0}</span>
+                                            <span className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">побед</span>
                                         </div>
                                     </div>
                                 </div>
@@ -358,22 +357,21 @@
                         </div>
                     </div>
 
-                    {/* --- ТАЙМЕР И ФАЗА (8% ВЫСОТЫ) --- */}
-                    {/* Подтянули блок выше за счет отрицательного маржина -mt-2 */}
-                    <div className="w-full shrink-0 h-[8%] flex flex-col items-center justify-center z-20 relative -mt-2">
-                        <div className="flex items-center gap-4">
-                            <div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-yellow-500 uppercase tracking-widest drop-shadow-[0_0_10px_rgba(255,105,180,0.5)]">
+                    {/* --- ТАЙМЕР И ФАЗА (УВЕЛИЧЕННЫЕ) --- */}
+                    <div className="w-full shrink-0 h-[10%] min-h-[80px] flex flex-col items-center justify-center z-20 relative">
+                        <div className="flex items-center gap-5">
+                            <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-yellow-500 uppercase tracking-widest drop-shadow-[0_0_10px_rgba(255,105,180,0.5)]">
                                 Раунд {round}/{TOTAL_ROUNDS}
                             </div>
                             
-                            <div className={`text-3xl font-black font-mono drop-shadow-[0_0_15px_rgba(0,0,0,0.8)] transition-colors duration-300
+                            <div className={`text-5xl font-black font-mono drop-shadow-[0_0_15px_rgba(0,0,0,0.8)] transition-colors duration-300
                                 ${(phase === 'ELIMINATING' || phase === 'PAUSED') ? 'text-red-500 animate-pulse' : 
                                   (phase === 'PLAYING' && timeLeft <= 10) ? 'text-red-400 animate-pulse' : 'text-cyan-400'}`}>
                                 {formatTime(timeLeft)}
                             </div>
                         </div>
                         
-                        <div className="text-[10px] text-gray-400 uppercase tracking-widest mt-1 text-center">
+                        <div className="text-sm text-gray-400 uppercase tracking-widest mt-2 text-center">
                             {phase === 'PLAYING' ? 'До выбывания' : 
                              phase === 'ELIMINATING' ? 'Выбывание...' : 
                              phase === 'PAUSED' ? 'Продолжение через' : 
@@ -383,7 +381,6 @@
                     </div>
 
                     {/* --- АДАПТИВНЫЙ РЕЙТИНГ НА ВСЮ ШИРИНУ --- */}
-                    {/* Убрали ограничение по ширине (max-w) и уменьшили отступы по бокам (px-2) */}
                     <div className="w-full flex-1 relative px-2 z-10 flex flex-col justify-center items-center min-h-[100px]">
                         
                         {phase === 'CELEBRATING' && roundWinner && (
@@ -443,8 +440,8 @@
                         </div>
                     </div>
 
-                    {/* --- СЕТКА ПОДАРКОВ ВНИЗУ (40% ВЫСОТЫ) --- */}
-                    <div className="w-full shrink-0 h-[40%] bg-black/95 border-t border-white/10 p-2 pb-10 z-30 flex flex-col backdrop-blur-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.9)]">
+                    {/* --- СЕТКА ПОДАРКОВ ВНИЗУ (38% ВЫСОТЫ) --- */}
+                    <div className="w-full shrink-0 h-[38%] bg-black/95 border-t border-white/10 p-2 pb-10 z-30 flex flex-col backdrop-blur-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.9)]">
                         <div className="text-center text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 mt-0.5">
                             ⬇️ Подарки для поддержки стран ⬇️
                         </div>
