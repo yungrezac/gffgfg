@@ -9,9 +9,11 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 // === НАСТРОЙКИ ===
-// Впишите сюда ваш @username из TikTok (без собачки)
-const TIKTOK_USERNAME = 'ВАШ_ТИКТОК_ЮЗЕРНЕЙМ'; 
-const PORT = 3000;
+// Вы можете задать юзернейм прямо здесь или через переменные окружения Railway (Variables)
+const TIKTOK_USERNAME = process.env.TIKTOK_USERNAME || 'ВАШ_ТИКТОК_ЮЗЕРНЕЙМ'; 
+
+// ВАЖНО ДЛЯ RAILWAY: Сервер должен слушать порт, который выдаст хостинг
+const PORT = process.env.PORT || 3000;
 
 // Раздаем наш HTML файл для корня и для /settings
 app.get('/', (req, res) => {
@@ -37,17 +39,15 @@ tiktokLiveConnection.on('gift', data => {
     io.emit('tiktok-gift', {
         username: data.uniqueId,
         giftName: data.giftName,
-        giftId: data.giftId, // Уникальный ID подарка в TikTok
+        giftId: data.giftId,
         cost: data.diamondCount,
-        icon: data.giftPictureUrl // Иконка подарка от TikTok
+        icon: data.giftPictureUrl
     });
     
-    console.log(`🎁 ${data.uniqueId} отправил ${data.giftName} (x${data.repeatCount})`);
+    console.log(`🎁 ${data.uniqueId} отправил ${data.giftName}`);
 });
 
 // === ЗАПУСК СЕРВЕРА ===
 server.listen(PORT, () => {
-    console.log(`🚀 Сервер запущен!`);
-    console.log(`📺 Ссылка для OBS (Виджет): http://localhost:${PORT}/`);
-    console.log(`⚙️ Ссылка для браузера (Настройки): http://localhost:${PORT}/settings`);
+    console.log(`🚀 Сервер запущен на порту ${PORT}!`);
 });
