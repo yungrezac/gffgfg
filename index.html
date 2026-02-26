@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Битва Стран - TikTok Live Виджет</title>
+    
+    <!-- Подключаем React и Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Подключаем Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: transparent; /* Оставляем прозрачным для OBS */
+            overflow: hidden;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: white;
+        }
+
+        /* Демо-фон (уберите или закомментируйте для чистого хромакея в OBS) */
+        .demo-background {
+            background: linear-gradient(135deg, rgba(15,23,42,0.95) 0%, rgba(0,0,0,0.98) 100%);
+        }
+
+        .progress-bar-transition { transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+        .score-pulse { animation: pulse-score 0.4s ease-out; }
+
+        @keyframes pulse-score {
+            0% { transform: scale(1); color: #fff; }
+            50% { transform: scale(1.3); color: #00ff88; text-shadow: 0 0 10px #00ff88; }
+            100% { transform: scale(1); color: #fff; }
+        }
+
+        @keyframes winnerPop {
+            0% { opacity: 0; transform: scale(0.5); }
+            50% { opacity: 1; transform: scale(1.1); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .winner-anim { animation: winnerPop 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- ДАННЫЕ SUPABASE ---
+        const SUPABASE_URL = 'https://zagvyrqnayxdbqkcjqud.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_glnqsWdFcmaHOzUrfD5fGA_dt6xiB1f';
+
+        // --- БАЗОВЫЕ ДАННЫЕ (6 стран для идеальных раундов) ---
+        const COUNTRIES = [
+            { id: 'ru', name: 'Россия', flag: '🇷🇺' },
+            { id: 'kz', name: 'Казахстан', flag: '🇰🇿' },
+            { id: 'ua', name: 'Украина', flag: '🇺🇦' },
+            { id: 'by', name: 'Беларусь', flag: '🇧🇾' },
+            { id: 'uz', name: 'Узбекистан', flag: '🇺🇿' },
+            { id: 'kg', name: 'Кыргызстан', flag: '🇰🇬' },
+        ];
+
+        // --- РЕЗЕРВНАЯ БИБЛИОТЕКА (На случай если БД пустая или недоступна) ---
+        const MOCK_GIFT_LIBRARY = [
+            { id: 'g1', name: 'Роза', icon: '🌹', cost: 1 }, { id: 'g2', name: 'Огонь', icon: '🔥', cost: 1 },
+            { id: 'g3', name: 'Чай', icon: '☕', cost: 1 }, { id: 'g4', name: 'Лайк', icon: '👍', cost: 1 },
+            { id: 'g5', name: 'Кофе', icon: '🥤', cost: 1 }, { id: 'g6', name: 'Цветок', icon: '🌼', cost: 1 },
+            { id: 'g7', name: 'Пончик', icon: '🍩', cost: 5 }, { id: 'g8', name: 'Мороженое', icon: '🍦', cost: 5 },
+            { id: 'g9', name: 'Сердце', icon: '❤️', cost: 10 }, { id: 'g10', name: 'GG', icon: '🎮', cost: 10 },
+            { id: 'g11', name: 'Мишка', icon: '🧸', cost: 100 }, { id: 'g12', name: 'Алмаз', icon: '💎', cost: 150 },
+            { id: 'g13', name: 'Очки', icon: '🕶️', cost: 199 }, { id: 'g14', name: 'Магия', icon: '✨', cost: 250 },
+            { id: 'g15', name: 'Корги', icon: '🐶', cost: 299 }, { id: 'g16', name: 'Корона', icon: '👑', cost: 500 },
+            { id: 'g17', name: 'Кот', icon: '🐱', cost: 500 }, { id: 'g18', name: 'Машина', icon: '🏎️', cost: 800 },
+            { id: 'g19', name: 'Галактика', icon: '🌌', cost: 1000 }, { id: 'g20', name: 'Ракета', icon: '🚀', cost: 1500 },
+            { id: 'g21', name: 'Кит', icon: '🐋', cost: 2150 }, { id: 'g22', name: 'Вертолет', icon: '🚁', cost: 3000 },
+            { id: 'g23', name: 'Дракон', icon: '🐉', cost: 5000 }, { id: 'g24', name: 'Замок', icon: '🏰', cost: 20000 },
+            { id: 'g25', name: 'Лев', icon: '🦁', cost: 29999 }, { id: 'g26', name: 'Феникс', icon: '🦅', cost: 35000 },
+            { id: 'g27', name: 'Яблоко', icon: '🍎', cost: 5 }, { id: 'g28', name: 'Пицца', icon: '🍕', cost: 20 },
+            { id: 'g29', name: 'Торт', icon: '🎂', cost: 300 }, { id: 'g30', name: 'Яхта', icon: '🛥️', cost: 9000 },
+            { id: 'g31', name: 'Планета', icon: '🪐', cost: 15000 }, { id: 'g32', name: 'Тигр', icon: '🐯', cost: 34999 }
+        ];
+
+        // Имена для симуляции донатеров
+        const MOCK_NAMES = ["User_99", "AlexPro", "Elena_V", "TiktokKing", "DarkKnight", "Winner_01", "CatLover", "Stark"];
+
+        const TOTAL_ROUNDS = 30;
+        const ROUND_TIMER_SECONDS = 15; // Секунд до выбывания слабейшего
+
+        const App = () => {
+            // --- СОСТОЯНИЯ ---
+            const [giftLibrary, setGiftLibrary] = useState([]);
+            const [isLoadingGifts, setIsLoadingGifts] = useState(true);
+            
+            const [scores, setScores] = useState({});
+            const [wins, setWins] = useState({});
+            const [activeCountries, setActiveCountries] = useState(COUNTRIES.map(c => c.id));
+            const [round, setRound] = useState(1);
+            
+            // 'PLAYING' | 'CELEBRATING' | 'GAME_OVER'
+            const [phase, setPhase] = useState('PLAYING'); 
+            const [timeLeft, setTimeLeft] = useState(ROUND_TIMER_SECONDS);
+            
+            const [pulsingIds, setPulsingIds] = useState(new Set());
+            const [isDemoActive, setIsDemoActive] = useState(true);
+
+            // --- ЗАГРУЗКА ПОДАРКОВ ИЗ SUPABASE ---
+            useEffect(() => {
+                const fetchGifts = async () => {
+                    try {
+                        const response = await fetch(`${SUPABASE_URL}/rest/v1/gift_library?select=*`, {
+                            headers: {
+                                'apikey': SUPABASE_KEY,
+                                'Authorization': `Bearer ${SUPABASE_KEY}`
+                            }
+                        });
+                        
+                        if (!response.ok) throw new Error('Ошибка сети при загрузке данных');
+                        
+                        const data = await response.json();
+                        
+                        // Если данных достаточно (минимум 24 подарка для 6 стран), используем их
+                        if (data && data.length >= 24) {
+                            setGiftLibrary(data);
+                        } else {
+                            console.warn("В Supabase недостаточно подарков (нужно минимум 24). Использую резервные данные.");
+                            setGiftLibrary(MOCK_GIFT_LIBRARY);
+                        }
+                    } catch (error) {
+                        console.error("Ошибка загрузки из Supabase:", error);
+                        setGiftLibrary(MOCK_GIFT_LIBRARY); // Фолбэк на замоканные данные
+                    } finally {
+                        setIsLoadingGifts(false);
+                    }
+                };
+
+                fetchGifts();
+            }, []);
+
+            // Безопасное распределение подарков на 6 стран (по 4 штуки каждой из разных категорий)
+            const countryGifts = useMemo(() => {
+                if (giftLibrary.length === 0) return {};
+                
+                const map = {};
+                // Сортируем подарки по возрастанию цены
+                let sortedLib = [...giftLibrary].sort((a,b) => (a.cost || 0) - (b.cost || 0));
+                
+                // Делим доступные подарки на 4 ценовые категории
+                const tierSize = Math.floor(sortedLib.length / 4);
+                const shuffle = (arr) => arr.sort(() => Math.random() - 0.5);
+                
+                const cheap = shuffle(sortedLib.slice(0, tierSize));
+                const medium = shuffle(sortedLib.slice(tierSize, tierSize * 2));
+                const expensive = shuffle(sortedLib.slice(tierSize * 2, tierSize * 3));
+                const superExpensive = shuffle(sortedLib.slice(tierSize * 3));
+                
+                // Раздаем каждой стране по одному уникальному подарку из каждой ценовой категории
+                COUNTRIES.forEach((country, index) => {
+                    map[country.id] = [
+                        cheap[index % cheap.length],
+                        medium[index % medium.length],
+                        expensive[index % expensive.length],
+                        superExpensive[index % superExpensive.length]
+                    ].filter(Boolean);
+                });
+                return map;
+            }, [giftLibrary]);
+
+            // Инициализация при старте/новом раунде
+            useEffect(() => {
+                if (phase === 'PLAYING' && activeCountries.length === COUNTRIES.length) {
+                    const initialScores = {};
+                    COUNTRIES.forEach(c => initialScores[c.id] = 0);
+                    setScores(initialScores);
+                    
+                    if (Object.keys(wins).length === 0) {
+                        const initialWins = {};
+                        COUNTRIES.forEach(c => initialWins[c.id] = 0);
+                        setWins(initialWins);
+                    }
+                }
+            }, [phase, activeCountries]);
+
+            // --- ИГРОВОЙ ЦИКЛ (ТАЙМЕР И ВЫБЫВАНИЕ) ---
+            useEffect(() => {
+                if (!isDemoActive || phase !== 'PLAYING' || isLoadingGifts) return;
+
+                const timer = setInterval(() => {
+                    setTimeLeft(prev => {
+                        if (prev <= 1) {
+                            // Время вышло - выбывает страна с минимальным счетом
+                            eliminateLowestCountry();
+                            return ROUND_TIMER_SECONDS;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+
+                return () => clearInterval(timer);
+            }, [phase, isDemoActive, scores, activeCountries, isLoadingGifts]);
+
+            const eliminateLowestCountry = () => {
+                if (activeCountries.length <= 1) return;
+
+                // Находим страну с минимальным счетом среди активных
+                let minScore = Infinity;
+                let lowestCountryId = null;
+
+                activeCountries.forEach(id => {
+                    const s = scores[id] || 0;
+                    if (s < minScore) {
+                        minScore = s;
+                        lowestCountryId = id;
+                    }
+                });
+
+                const newActive = activeCountries.filter(id => id !== lowestCountryId);
+                setActiveCountries(newActive);
+
+                // Если осталась одна страна - она победитель раунда
+                if (newActive.length === 1) {
+                    const winnerId = newActive[0];
+                    setPhase('CELEBRATING');
+                    setWins(prev => ({ ...prev, [winnerId]: (prev[winnerId] || 0) + 1 }));
+                    
+                    // Переход к следующему раунду через 5 секунд
+                    setTimeout(() => {
+                        if (round < TOTAL_ROUNDS) {
+                            setRound(r => r + 1);
+                            setActiveCountries(COUNTRIES.map(c => c.id));
+                            setScores({}); // Сброс очков
+                            setTimeLeft(ROUND_TIMER_SECONDS);
+                            setPhase('PLAYING');
+                        } else {
+                            setPhase('GAME_OVER');
+                        }
+                    }, 5000);
+                }
+            };
+
+            // --- ОБРАБОТКА ПОДАРКА ---
+            const handleGift = (countryId, giftInfo, username) => {
+                // Игнорируем подарки для выбывших стран
+                if (!activeCountries.includes(countryId) || phase !== 'PLAYING') return;
+                if (!giftInfo) return; // Защита от непредвиденных пустых подарков
+
+                // Добавляем очки (учитываем cost из Supabase)
+                const cost = giftInfo.cost || 0;
+                setScores(prev => ({ ...prev, [countryId]: (prev[countryId] || 0) + cost }));
+
+                // Анимация пульсации
+                setPulsingIds(prev => new Set(prev).add(countryId));
+                setTimeout(() => {
+                    setPulsingIds(prev => {
+                        const newSet = new Set(prev);
+                        newSet.delete(countryId);
+                        return newSet;
+                    });
+                }, 400);
+            };
+
+            // --- СИМУЛЯТОР ДОНАТОВ ---
+            useEffect(() => {
+                if (!isDemoActive || phase !== 'PLAYING' || isLoadingGifts) return;
+
+                const interval = setInterval(() => {
+                    if (activeCountries.length === 0) return;
+                    
+                    // Выбираем случайную активную страну
+                    const randomCountryId = activeCountries[Math.floor(Math.random() * activeCountries.length)];
+                    const countryAvailGifts = countryGifts[randomCountryId];
+                    if (!countryAvailGifts || countryAvailGifts.length === 0) return;
+                    
+                    // Выбираем подарок (шансы: 60% дешевый, 30% средний, 8% дорогой, 2% супер)
+                    const rand = Math.random();
+                    let giftIdx = 0;
+                    if (rand > 0.6 && rand <= 0.9) giftIdx = Math.min(1, countryAvailGifts.length - 1);
+                    else if (rand > 0.9 && rand <= 0.98) giftIdx = Math.min(2, countryAvailGifts.length - 1);
+                    else if (rand > 0.98) giftIdx = Math.min(3, countryAvailGifts.length - 1);
+
+                    const gift = countryAvailGifts[giftIdx];
+                    if (!gift) return;
+
+                    const randomName = MOCK_NAMES[Math.floor(Math.random() * MOCK_NAMES.length)];
+                    
+                    handleGift(randomCountryId, gift, randomName);
+                }, Math.random() * 800 + 400); // Быстрый темп
+
+                return () => clearInterval(interval);
+            }, [isDemoActive, phase, activeCountries, countryGifts, isLoadingGifts]);
+
+            // --- СОРТИРОВКА ДЛЯ ЛИДЕРБОРДА ---
+            const sortedActiveCountries = useMemo(() => {
+                return activeCountries
+                    .map(id => ({ ...COUNTRIES.find(c => c.id === id), score: scores[id] || 0 }))
+                    .sort((a, b) => b.score - a.score);
+            }, [activeCountries, scores]);
+
+            const maxScore = sortedActiveCountries[0]?.score || 1;
+            const roundWinner = phase === 'CELEBRATING' ? COUNTRIES.find(c => c.id === activeCountries[0]) : null;
+
+            if (isLoadingGifts) {
+                return (
+                    <div className="w-full h-screen demo-background flex items-center justify-center text-white font-sans text-2xl animate-pulse">
+                        Подключение к базе данных подарков...
+                    </div>
+                );
+            }
+
+            return (
+                <div className="w-full h-screen demo-background flex flex-col items-center relative overflow-hidden text-white font-sans">
+                    
+                    {/* --- ВЕРХНЯЯ ПАНЕЛЬ (ПОБЕДЫ И ИНФО) --- */}
+                    <div className="w-full h-[8%] min-h-[60px] bg-black/60 border-b border-white/10 flex items-center justify-between px-6 z-20 backdrop-blur-md shrink-0">
+                        {/* Статистика побед */}
+                        <div className="flex gap-4 overflow-x-auto items-center pr-4 hide-scrollbar">
+                            <span className="text-gray-400 text-xs font-bold uppercase mr-2 tracking-widest">Победы:</span>
+                            {COUNTRIES.map(c => (
+                                <div key={c.id} className="flex items-center bg-white/5 rounded-full px-3 py-1 border border-white/10">
+                                    <span className="text-xl mr-2 drop-shadow-md">{c.flag}</span>
+                                    <span className="font-bold text-green-400">{wins[c.id] || 0}</span>
+                                </div>
+                            ))}
+                        </div>
+                        {/* Раунд и Демо-переключатель */}
+                        <div className="flex items-center gap-4 flex-shrink-0">
+                            <div className="text-right">
+                                <div className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-yellow-500 uppercase tracking-widest">
+                                    Раунд {round}/{TOTAL_ROUNDS}
+                                </div>
+                                <div className="text-xs text-gray-400 uppercase tracking-widest">
+                                    {phase === 'PLAYING' ? `Выбывание через: ${timeLeft}с` : 'Ожидание...'}
+                                </div>
+                            </div>
+                            <button onClick={() => setIsDemoActive(!isDemoActive)} className={`text-[10px] px-2 py-1 rounded-full border ${isDemoActive ? 'border-green-500 text-green-400' : 'border-gray-500 text-gray-500'} cursor-pointer`}>
+                                {isDemoActive ? 'Demo ON' : 'Demo OFF'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* --- МЕСТО ПОД ВЕБКАМЕРУ (Стример) --- */}
+                    <div className="w-full h-[25%] min-h-[200px] flex items-center justify-center p-4 z-10 shrink-0">
+                        <div className="w-[350px] h-full border-2 border-dashed border-white/20 rounded-2xl bg-black/20 backdrop-blur-sm flex flex-col items-center justify-center relative overflow-hidden">
+                            <span className="text-white/30 text-xl font-bold uppercase tracking-widest text-center px-4">
+                                Место для вебкамеры<br/>
+                                <span className="text-xs font-normal">(Разместите слой вебки под виджетом в OBS)</span>
+                            </span>
+                            {/* Декоративные уголки */}
+                            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-cyan-500 rounded-tl-xl"></div>
+                            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-cyan-500 rounded-tr-xl"></div>
+                            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-cyan-500 rounded-bl-xl"></div>
+                            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-cyan-500 rounded-br-xl"></div>
+                        </div>
+                    </div>
+
+                    {/* --- КОМПАКТНЫЙ РЕЙТИНГ ПО ЦЕНТРУ --- */}
+                    <div className="flex-1 w-full max-w-[500px] relative px-4 z-10 flex flex-col justify-center">
+                        {phase === 'CELEBRATING' && roundWinner && (
+                            <div className="absolute inset-0 z-50 flex items-center justify-center winner-anim">
+                                <div className="bg-gradient-to-br from-yellow-500 via-orange-500 to-red-500 p-1 rounded-3xl shadow-[0_0_100px_rgba(255,165,0,0.6)]">
+                                    <div className="bg-black/90 rounded-[22px] px-10 py-8 text-center backdrop-blur-xl flex flex-col items-center">
+                                        <div className="text-8xl drop-shadow-2xl mb-4">{roundWinner.flag}</div>
+                                        <h2 className="text-3xl font-black text-white uppercase tracking-wider mb-2">ПОБЕДИТЕЛЬ РАУНДА!</h2>
+                                        <h3 className="text-xl text-yellow-400 font-bold">+1 в копилку</h3>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="relative w-full h-full" style={{ height: `${sortedActiveCountries.length * 65}px`, maxHeight: '100%' }}>
+                            {sortedActiveCountries.map((country, index) => {
+                                const translateY = index * 65;
+                                const isFirst = index === 0;
+                                const isLast = index === sortedActiveCountries.length - 1;
+                                const isPulsing = pulsingIds.has(country.id);
+                                const progressPercentage = Math.max(2, (country.score / maxScore) * 100);
+
+                                return (
+                                    <div 
+                                        key={country.id}
+                                        className={`absolute left-0 right-0 h-[55px] bg-black/60 backdrop-blur-md rounded-2xl flex items-center p-3 border transition-all duration-500 ease-in-out ${isLast && phase === 'PLAYING' && timeLeft <= 5 ? 'border-red-500/80 shadow-[0_0_15px_rgba(255,0,0,0.5)] animate-pulse' : 'border-white/10'}`}
+                                        style={{ transform: `translateY(${translateY}px)`, zIndex: 20 - index }}
+                                    >
+                                        <div className="text-3xl mr-3 drop-shadow-md">{country.flag}</div>
+                                        <div className="font-bold text-lg text-white flex-1">{country.name}</div>
+                                        <div className="flex flex-col items-end z-10 ml-2">
+                                            <span className={`font-black text-2xl tabular-nums ${isPulsing ? 'score-pulse' : ''} text-green-400`}>
+                                                {country.score.toLocaleString('ru-RU')}
+                                            </span>
+                                        </div>
+                                        {/* Прогресс бар */}
+                                        <div className="absolute top-0 left-0 h-full rounded-2xl overflow-hidden opacity-30 pointer-events-none w-full">
+                                            <div className="h-full progress-bar-transition bg-gradient-to-r from-green-500 to-cyan-500" style={{ width: `${progressPercentage}%` }}></div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* --- СЕТКА ПОДАРКОВ ВНИЗУ (ИНСТРУКЦИЯ ДЛЯ ЗРИТЕЛЕЙ) --- */}
+                    {/* Высота жестко зафиксирована на 35vh (35% высоты экрана) */}
+                    <div className="w-full h-[35vh] shrink-0 bg-black/80 border-t border-white/10 p-2 z-20 flex flex-col backdrop-blur-xl">
+                        <div className="text-center text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 mt-1">
+                            ⬇️ Отправляйте эти подарки для поддержки своей страны ⬇️
+                        </div>
+                        {/* Сетка стран: 3 колонки х 2 строки для 6 стран */}
+                        <div className="grid grid-cols-3 grid-rows-2 gap-2 h-full pb-2">
+                            {COUNTRIES.map(country => {
+                                const isActive = activeCountries.includes(country.id);
+                                const gifts = countryGifts[country.id] || [];
+
+                                return (
+                                    <div key={country.id} className={`flex flex-col rounded-xl border ${isActive ? 'bg-white/5 border-white/10' : 'bg-white/5 border-red-500/30 opacity-40 grayscale'} overflow-hidden relative transition-all duration-500`}>
+                                        
+                                        {/* Заголовок страны */}
+                                        <div className="bg-white/10 py-1 flex items-center justify-center gap-1 border-b border-white/5">
+                                            <span className="text-lg drop-shadow-sm">{country.flag}</span>
+                                            <span className="text-xs font-bold text-white truncate max-w-[80px]">{country.name}</span>
+                                        </div>
+                                        
+                                        {/* Сетка 4 подарков */}
+                                        <div className="grid grid-cols-2 grid-rows-2 flex-1 p-1 gap-1">
+                                            {gifts.map((gift, idx) => gift ? (
+                                                <div key={gift.id || idx} className="bg-black/40 rounded-lg flex flex-col items-center justify-center relative overflow-hidden group">
+                                                    <span className="text-2xl mb-1 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">{gift.icon}</span>
+                                                    <div className="flex items-center text-[9px] font-black text-yellow-400 bg-black/50 px-1.5 py-0.5 rounded-full">
+                                                        {gift.cost}
+                                                    </div>
+                                                </div>
+                                            ) : null)}
+                                        </div>
+
+                                        {!isActive && (
+                                            <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center backdrop-blur-[1px]">
+                                                <span className="text-red-500 font-black uppercase text-xl rotate-[-15deg] border-2 border-red-500 px-2 py-0.5 rounded bg-black/50">ВЫБЫЛ</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
