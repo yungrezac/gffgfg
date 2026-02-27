@@ -10,10 +10,13 @@ const io = new Server(server, { cors: { origin: '*' } });
 
 // === НАСТРОЙКИ ===
 // Вы можете задать юзернейм прямо здесь или через переменные окружения Railway (Variables)
-const TIKTOK_USERNAME = process.env.TIKTOK_USERNAME || 'ВАШ_ТИКТОК_ЮЗЕРНЕЙМ'; 
+const TIKTOK_USERNAME = process.env.TIKTOK_USERNAME || 'nneensi0'; 
 
 // ВАЖНО ДЛЯ RAILWAY: Сервер должен слушать порт, который выдаст хостинг
 const PORT = process.env.PORT || 3000;
+
+// Глобальная переменная для хранения настроек на сервере
+let globalSettings = null; 
 
 // Раздаем наш HTML файл для корня и для /settings
 app.get('/', (req, res) => {
@@ -22,6 +25,22 @@ app.get('/', (req, res) => {
 
 app.get('/settings', (req, res) => {
     res.sendFile(path.join(__dirname, 'tiktok-widget.html'));
+});
+
+// === SOCKET.IO (СВЯЗЬ С КЛИЕНТАМИ) ===
+io.on('connection', (socket) => {
+    // 1. При подключении (например, открыли виджет) — сразу отдаем ему актуальные настройки с сервера
+    if (globalSettings) {
+        socket.emit('update-settings', globalSettings);
+    }
+
+    // 2. Слушаем событие сохранения настроек со страницы /settings
+    socket.on('save-settings', (settings) => {
+        globalSettings = settings;
+        // Пересылаем новые настройки всем открытым вкладкам (виджетам в OBS)
+        io.emit('update-settings', settings);
+        console.log('⚙️ Настройки обновлены и отправлены на все виджеты!');
+    });
 });
 
 // === ПОДКЛЮЧЕНИЕ К TIKTOK ===
