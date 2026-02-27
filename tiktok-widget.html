@@ -117,8 +117,24 @@
             const [countryGifts, setCountryGifts] = useState({});
             const [loading, setLoading] = useState(true);
             const [savedStatus, setSavedStatus] = useState(false);
+            const socketRef = useRef(null);
 
             useEffect(() => {
+                // Подключаемся к сокету для приема/отправки настроек
+                if (typeof io !== 'undefined') {
+                    socketRef.current = io();
+                    
+                    // Если сервер пришлет актуальные настройки, применим их
+                    socketRef.current.on('update-settings', (serverSettings) => {
+                        if (serverSettings && serverSettings.countries) {
+                            setRounds(serverSettings.rounds || DEFAULT_ROUNDS);
+                            setSelectedCountries(serverSettings.countries);
+                            setCountryGifts(serverSettings.gifts || {});
+                        }
+                    });
+                }
+
+                // Параллельно загружаем библиотеку подарков
                 const fetchGifts = async () => {
                     try {
                         const response = await fetch(`${SUPABASE_URL}/rest/v1/gift_library?select=*`, {
@@ -134,7 +150,7 @@
                 };
                 fetchGifts();
 
-                // Загружаем сохраненные настройки
+                // Изначально пробуем подтянуть из localStorage
                 const saved = localStorage.getItem('tiktok_battle_settings');
                 if (saved) {
                     try {
@@ -144,6 +160,8 @@
                         if (parsed.gifts) setCountryGifts(parsed.gifts);
                     } catch(e) { console.error(e); }
                 }
+
+                return () => { if (socketRef.current) socketRef.current.disconnect(); };
             }, []);
 
             const handleCountryChange = (index, countryId) => {
@@ -167,7 +185,15 @@
                     countries: selectedCountries,
                     gifts: countryGifts
                 };
+                
+                // Сохраняем локально
                 localStorage.setItem('tiktok_battle_settings', JSON.stringify(settingsToSave));
+                
+                // Отправляем на сервер, чтобы виджет в OBS сразу обновился
+                if (socketRef.current) {
+                    socketRef.current.emit('save-settings', settingsToSave);
+                }
+
                 setSavedStatus(true);
                 setTimeout(() => setSavedStatus(false), 3000);
             };
@@ -182,7 +208,7 @@
                                 Настройки виджета
                             </h1>
                             <button onClick={() => window.location.href = '/'} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition">
-                                Назад к виджету
+                                К виджету
                             </button>
                         </div>
 
@@ -257,9 +283,9 @@
                                 onClick={handleSave}
                                 className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold rounded-xl shadow-lg transition-all transform hover:scale-105"
                             >
-                                Сохранить настройки
+                                Сохранить и обновить виджет
                             </button>
-                            {savedStatus && <span className="text-green-400 font-bold animate-pulse">Успешно сохранено! ✔️</span>}
+                            {savedStatus && <span className="text-green-400 font-bold animate-pulse">Виджет успешно обновлен! ✔️</span>}
                         </div>
                     </div>
                 </div>
@@ -270,11 +296,15 @@
         // 2. ГЛАВНЫЙ ВИДЖЕТ (ИГРА)
         // =========================================================================
         const WidgetApp = () => {
-            // Загрузка настроек
-            const savedSettings = JSON.parse(localStorage.getItem('tiktok_battle_settings') || '{}');
-            const ACTIVE_COUNTRIES = savedSettings.countries && savedSettings.countries.length === 6 ? savedSettings.countries : DEFAULT_COUNTRIES;
-            const TOTAL_ROUNDS = savedSettings.rounds || DEFAULT_ROUNDS;
-            const ASSIGNED_GIFTS = savedSettings.gifts || {};
+            // Динамические настройки (могут меняться на лету)
+            const [appSettings, setAppSettings] = useState(() => {
+                const saved = localStorage.getItem('tiktok_battle_settings');
+                return saved ? JSON.parse(saved) : { rounds: DEFAULT_ROUNDS, countries: DEFAULT_COUNTRIES, gifts: {} };
+            });
+
+            const ACTIVE_COUNTRIES = appSettings.countries && appSettings.countries.length === 6 ? appSettings.countries : DEFAULT_COUNTRIES;
+            const TOTAL_ROUNDS = appSettings.rounds || DEFAULT_ROUNDS;
+            const ASSIGNED_GIFTS = appSettings.gifts || {};
 
             const [scores, setScores] = useState({});
             const [wins, setWins] = useState({});
@@ -286,7 +316,7 @@
             const [eliminatedJustNow, setEliminatedJustNow] = useState(null); 
             
             const [pulsingIds, setPulsingIds] = useState(new Set());
-            const [isDemoActive, setIsDemoActive] = useState(false); // Демо выключено по умолчанию
+            const [isDemoActive, setIsDemoActive] = useState(false); 
 
             // --- ИНИЦИАЛИЗАЦИЯ ПРИ СТАРТЕ ---
             useEffect(() => {
@@ -300,25 +330,25 @@
                 }
             }, []);
 
-            // --- Refs для Socket.io ---
-            // Refs нужны, чтобы вебсокет всегда видел актуальное состояние фазы и списка стран, 
-            // не пересоздавая подключение каждую секунду
+            // --- Refs для актуальных данных внутри Socket.io ---
             const phaseRef = useRef(phase);
             const activeCountriesRef = useRef(activeCountries);
+            const assignedGiftsRef = useRef(ASSIGNED_GIFTS);
+            
             useEffect(() => { phaseRef.current = phase; }, [phase]);
             useEffect(() => { activeCountriesRef.current = activeCountries; }, [activeCountries]);
+            useEffect(() => { assignedGiftsRef.current = ASSIGNED_GIFTS; }, [ASSIGNED_GIFTS]);
 
-            // --- ПОДКЛЮЧЕНИЕ К TIKTOK СЕРВЕРУ ЧЕРЕЗ SOCKET.IO ---
+            // --- ПОДКЛЮЧЕНИЕ К СЕРВЕРУ ЧЕРЕЗ SOCKET.IO ---
             useEffect(() => {
-                if (typeof io !== 'undefined') {
-                    const socket = io(); // Автоматически подключается к хосту (Railway)
-                    
+                const socket = typeof io !== 'undefined' ? io() : null;
+                if (socket) {
+                    // Обработка получения подарка из эфира
                     socket.on('tiktok-gift', (data) => {
                         let targetCountryId = null;
                         let giftValue = 0;
 
-                        // Ищем страну, к которой привязан этот подарок
-                        Object.entries(ASSIGNED_GIFTS).forEach(([countryId, giftsArray]) => {
+                        Object.entries(assignedGiftsRef.current).forEach(([countryId, giftsArray]) => {
                             if (!giftsArray) return;
                             const matchedGift = giftsArray.find(g => g && g.name.toLowerCase() === data.giftName.toLowerCase());
                             if (matchedGift) {
@@ -327,14 +357,11 @@
                             }
                         });
 
-                        // Если подарок привязан, страна еще в игре и идет фаза игры -> добавляем очки
                         if (targetCountryId && giftValue > 0) {
                             if (!activeCountriesRef.current.includes(targetCountryId) || phaseRef.current !== 'PLAYING') return;
 
-                            // Обновляем очки (используем prev, чтобы не зависеть от замыкания)
                             setScores(prev => ({ ...prev, [targetCountryId]: (prev[targetCountryId] || 0) + giftValue }));
 
-                            // Анимация пульсации
                             setPulsingIds(prev => new Set(prev).add(targetCountryId));
                             setTimeout(() => {
                                 setPulsingIds(prev => {
@@ -346,9 +373,34 @@
                         }
                     });
 
+                    // АВТООБНОВЛЕНИЕ ПРИ СОХРАНЕНИИ НАСТРОЕК
+                    socket.on('update-settings', (newSettings) => {
+                        if (newSettings && newSettings.countries) {
+                            setAppSettings(newSettings);
+                            localStorage.setItem('tiktok_battle_settings', JSON.stringify(newSettings));
+                            
+                            // Сбрасываем текущую игру под новые настройки
+                            const newCountriesList = newSettings.countries.length === 6 ? newSettings.countries : DEFAULT_COUNTRIES;
+                            setActiveCountries(newCountriesList.map(c => c.id));
+                            
+                            const initialScores = {};
+                            newCountriesList.forEach(c => initialScores[c.id] = 0);
+                            setScores(initialScores);
+                            
+                            const initialWins = {};
+                            newCountriesList.forEach(c => initialWins[c.id] = 0);
+                            setWins(initialWins);
+                            
+                            setRound(1);
+                            setPhase('PLAYING');
+                            setTimeLeft(ROUND_PLAY_SECONDS);
+                            setEliminatedJustNow(null);
+                        }
+                    });
+
                     return () => socket.disconnect();
                 }
-            }, [ASSIGNED_GIFTS]);
+            }, []);
 
             // --- МАШИНА СОСТОЯНИЙ (ТАЙМЕР ИГРЫ) ---
             useEffect(() => {
@@ -407,7 +459,7 @@
                         setTimeLeft(ROUND_PLAY_SECONDS);
                     }
                 }
-            }, [timeLeft, phase, activeCountries, scores, eliminatedJustNow, round]);
+            }, [timeLeft, phase, activeCountries, scores, eliminatedJustNow, round, ACTIVE_COUNTRIES, TOTAL_ROUNDS]);
 
             // --- СИМУЛЯТОР ДОНАТОВ (КНОПКА DEMO) ---
             useEffect(() => {
@@ -420,16 +472,18 @@
                     const countryAvailGifts = ASSIGNED_GIFTS[randomCountryId];
                     if (!countryAvailGifts || countryAvailGifts.length === 0) return;
                     
+                    const validGifts = countryAvailGifts.filter(g => g !== null);
+                    if (validGifts.length === 0) return;
+
                     const rand = Math.random();
                     let giftIdx = 0;
-                    if (rand > 0.6 && rand <= 0.9) giftIdx = Math.min(1, countryAvailGifts.length - 1);
-                    else if (rand > 0.9 && rand <= 0.98) giftIdx = Math.min(2, countryAvailGifts.length - 1);
-                    else if (rand > 0.98) giftIdx = Math.min(3, countryAvailGifts.length - 1);
+                    if (rand > 0.6 && rand <= 0.9) giftIdx = Math.min(1, validGifts.length - 1);
+                    else if (rand > 0.9 && rand <= 0.98) giftIdx = Math.min(2, validGifts.length - 1);
+                    else if (rand > 0.98) giftIdx = Math.min(3, validGifts.length - 1);
 
-                    const gift = countryAvailGifts[giftIdx];
+                    const gift = validGifts[giftIdx];
                     if (!gift) return;
 
-                    // Добавляем очки (Симуляция)
                     setScores(prev => ({ ...prev, [randomCountryId]: (prev[randomCountryId] || 0) + gift.cost }));
                     setPulsingIds(prev => new Set(prev).add(randomCountryId));
                     setTimeout(() => {
@@ -454,7 +508,7 @@
                 return listToRender
                     .map(id => ({ ...ACTIVE_COUNTRIES.find(c => c.id === id), score: scores[id] || 0 }))
                     .sort((a, b) => b.score - a.score);
-            }, [activeCountries, scores, phase, eliminatedJustNow]);
+            }, [activeCountries, scores, phase, eliminatedJustNow, ACTIVE_COUNTRIES]);
 
             const maxScore = sortedCountriesWithEliminating[0]?.score || 1;
             const roundWinner = phase === 'CELEBRATING' ? ACTIVE_COUNTRIES.find(c => c.id === activeCountries[0]) : null;
